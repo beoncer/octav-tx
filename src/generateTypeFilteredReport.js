@@ -264,6 +264,7 @@ CSV Output Columns:
   - Field no (sequential numbering: 1, 2, 3, ...)
   - Trading capacity (constant: DEAL)
   - Transaction_status (constant: NEWT)
+  - Direction (IN/OUT - for swaps creates 2 rows)
   - Wallet Address
   - Timestamp
   - Transaction Type
@@ -277,6 +278,10 @@ CSV Output Columns:
   - From Address
   - To Address
   - Block Number
+
+Note: SWAP and similar transactions create TWO rows:
+  - Row 1: OUT - token sent (with fees)
+  - Row 2: IN - token received (fees = 0)
 `);
 }
 

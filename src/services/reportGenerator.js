@@ -21,29 +21,50 @@ class ReportGenerator {
   /**
    * Extract token and value information from transaction assets
    * @param {Object} tx - Transaction object
+   * @param {string} side - 'in' or 'out' to specify which assets to extract
    * @returns {Object} Token and value information
    */
-  extractTokenInfo(tx) {
+  extractTokenInfo(tx, side = 'auto') {
     let token = 'N/A';
     let value = '0';
     let valueFiat = '0';
     
-    // Check assetsIn first (what the wallet received)
-    if (tx.assetsIn && tx.assetsIn.length > 0) {
+    if (side === 'in' && tx.assetsIn && tx.assetsIn.length > 0) {
       const asset = tx.assetsIn[0];
       token = asset.symbol || asset.name || 'N/A';
       value = asset.balance || '0';
-      valueFiat = asset.value || '0'; // The 'value' field in assets is the fiat value
-    }
-    // Check assetsOut (what the wallet sent)
-    else if (tx.assetsOut && tx.assetsOut.length > 0) {
+      valueFiat = asset.value || '0';
+    } else if (side === 'out' && tx.assetsOut && tx.assetsOut.length > 0) {
       const asset = tx.assetsOut[0];
       token = asset.symbol || asset.name || 'N/A';
       value = asset.balance || '0';
-      valueFiat = asset.value || '0'; // The 'value' field in assets is the fiat value
+      valueFiat = asset.value || '0';
+    } else if (side === 'auto') {
+      // Auto mode: prefer assetsIn, fallback to assetsOut
+      if (tx.assetsIn && tx.assetsIn.length > 0) {
+        const asset = tx.assetsIn[0];
+        token = asset.symbol || asset.name || 'N/A';
+        value = asset.balance || '0';
+        valueFiat = asset.value || '0';
+      } else if (tx.assetsOut && tx.assetsOut.length > 0) {
+        const asset = tx.assetsOut[0];
+        token = asset.symbol || asset.name || 'N/A';
+        value = asset.balance || '0';
+        valueFiat = asset.value || '0';
+      }
     }
     
     return { token, value, valueFiat };
+  }
+
+  /**
+   * Check if transaction has both assetsIn and assetsOut (like swaps)
+   * @param {Object} tx - Transaction object
+   * @returns {boolean}
+   */
+  hasBothAssets(tx) {
+    return (tx.assetsIn && tx.assetsIn.length > 0) && 
+           (tx.assetsOut && tx.assetsOut.length > 0);
   }
 
   /**
@@ -81,6 +102,7 @@ class ReportGenerator {
           { id: 'field_no', title: 'Field no' },
           { id: 'trading_capacity', title: 'Trading capacity' },
           { id: 'transaction_status', title: 'Transaction_status' },
+          { id: 'direction', title: 'Direction' },
           { id: 'wallet', title: 'Wallet Address' },
           { id: 'timestamp', title: 'Timestamp' },
           { id: 'type', title: 'Transaction Type' },
@@ -155,29 +177,83 @@ class ReportGenerator {
             
             if (includeTransaction) {
               totalFilteredTransactions++;
-              recordCounter++;
               
-              // Extract token and value information
-              const { token, value, valueFiat } = this.extractTokenInfo(tx);
-              
-              records.push({
-                field_no: recordCounter,
-                trading_capacity: 'DEAL',
-                transaction_status: 'NEWT',
-                wallet,
-                timestamp: this.formatTimestamp(tx.timestamp || tx.date),
-                type: tx.type || 'unknown',
-                chain: tx.chain?.name || tx.chain?.key || 'unknown',
-                protocol: tx.protocol?.name || 'N/A',
-                token: token,
-                value: value,
-                value_fiat: valueFiat,
-                fees: tx.fees || '0',
-                hash: tx.hash || tx.transactionHash || 'N/A',
-                from: tx.from || 'N/A',
-                to: tx.to || 'N/A',
-                block_number: blockNumber,
-              });
+              // Check if transaction has both assetsIn and assetsOut (like swaps)
+              if (this.hasBothAssets(tx)) {
+                // Create two rows: one for OUT, one for IN
+                
+                // Row 1: Assets OUT (what was sent)
+                recordCounter++;
+                const outInfo = this.extractTokenInfo(tx, 'out');
+                records.push({
+                  field_no: recordCounter,
+                  trading_capacity: 'DEAL',
+                  transaction_status: 'NEWT',
+                  direction: 'OUT',
+                  wallet,
+                  timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                  type: tx.type || 'unknown',
+                  chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                  protocol: tx.protocol?.name || 'N/A',
+                  token: outInfo.token,
+                  value: outInfo.value,
+                  value_fiat: outInfo.valueFiat,
+                  fees: tx.fees || '0',
+                  hash: tx.hash || tx.transactionHash || 'N/A',
+                  from: tx.from || 'N/A',
+                  to: tx.to || 'N/A',
+                  block_number: blockNumber,
+                });
+                
+                // Row 2: Assets IN (what was received)
+                recordCounter++;
+                const inInfo = this.extractTokenInfo(tx, 'in');
+                records.push({
+                  field_no: recordCounter,
+                  trading_capacity: 'DEAL',
+                  transaction_status: 'NEWT',
+                  direction: 'IN',
+                  wallet,
+                  timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                  type: tx.type || 'unknown',
+                  chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                  protocol: tx.protocol?.name || 'N/A',
+                  token: inInfo.token,
+                  value: inInfo.value,
+                  value_fiat: inInfo.valueFiat,
+                  fees: '0', // Fees only on OUT row
+                  hash: tx.hash || tx.transactionHash || 'N/A',
+                  from: tx.from || 'N/A',
+                  to: tx.to || 'N/A',
+                  block_number: blockNumber,
+                });
+              } else {
+                // Single asset transaction (normal transfer, deposit, etc.)
+                recordCounter++;
+                const { token, value, valueFiat } = this.extractTokenInfo(tx, 'auto');
+                const direction = (tx.assetsIn && tx.assetsIn.length > 0) ? 'IN' : 
+                                 (tx.assetsOut && tx.assetsOut.length > 0) ? 'OUT' : 'N/A';
+                
+                records.push({
+                  field_no: recordCounter,
+                  trading_capacity: 'DEAL',
+                  transaction_status: 'NEWT',
+                  direction: direction,
+                  wallet,
+                  timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                  type: tx.type || 'unknown',
+                  chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                  protocol: tx.protocol?.name || 'N/A',
+                  token: token,
+                  value: value,
+                  value_fiat: valueFiat,
+                  fees: tx.fees || '0',
+                  hash: tx.hash || tx.transactionHash || 'N/A',
+                  from: tx.from || 'N/A',
+                  to: tx.to || 'N/A',
+                  block_number: blockNumber,
+                });
+              }
             }
           });
         }
@@ -232,6 +308,7 @@ class ReportGenerator {
           { id: 'field_no', title: 'Field no' },
           { id: 'trading_capacity', title: 'Trading capacity' },
           { id: 'transaction_status', title: 'Transaction_status' },
+          { id: 'direction', title: 'Direction' },
           { id: 'wallet', title: 'Wallet Address' },
           { id: 'timestamp', title: 'Timestamp' },
           { id: 'type', title: 'Transaction Type' },
@@ -265,7 +342,6 @@ class ReportGenerator {
             
             if (typesToFilter.includes(txType)) {
               totalFilteredTransactions++;
-              recordCounter++;
               
               // Determine validation status
               const status = tx.status || 'success';
@@ -273,27 +349,82 @@ class ReportGenerator {
               const blockNumber = tx.blockNumber || tx.block_number || 'N/A';
               const isValidated = confirmed && status === 'success';
               
-              // Extract token and value information
-              const { token, value, valueFiat } = this.extractTokenInfo(tx);
-              
-              records.push({
-                field_no: recordCounter,
-                trading_capacity: 'DEAL',
-                transaction_status: 'NEWT',
-                wallet,
-                timestamp: this.formatTimestamp(tx.timestamp || tx.date),
-                type: txType,
-                chain: tx.chain?.name || tx.chain?.key || 'unknown',
-                protocol: tx.protocol?.name || 'N/A',
-                token: token,
-                value: value,
-                value_fiat: valueFiat,
-                fees: tx.fees || '0',
-                hash: tx.hash || tx.transactionHash || 'N/A',
-                from: tx.from || 'N/A',
-                to: tx.to || 'N/A',
-                block_number: blockNumber,
-              });
+              // Check if transaction has both assetsIn and assetsOut (like swaps)
+              if (this.hasBothAssets(tx)) {
+                // Create two rows: one for OUT, one for IN
+                
+                // Row 1: Assets OUT (what was sent)
+                recordCounter++;
+                const outInfo = this.extractTokenInfo(tx, 'out');
+                records.push({
+                  field_no: recordCounter,
+                  trading_capacity: 'DEAL',
+                  transaction_status: 'NEWT',
+                  direction: 'OUT',
+                  wallet,
+                  timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                  type: txType,
+                  chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                  protocol: tx.protocol?.name || 'N/A',
+                  token: outInfo.token,
+                  value: outInfo.value,
+                  value_fiat: outInfo.valueFiat,
+                  fees: tx.fees || '0',
+                  hash: tx.hash || tx.transactionHash || 'N/A',
+                  from: tx.from || 'N/A',
+                  to: tx.to || 'N/A',
+                  block_number: blockNumber,
+                });
+                
+                // Row 2: Assets IN (what was received)
+                recordCounter++;
+                const inInfo = this.extractTokenInfo(tx, 'in');
+                records.push({
+                  field_no: recordCounter,
+                  trading_capacity: 'DEAL',
+                  transaction_status: 'NEWT',
+                  direction: 'IN',
+                  wallet,
+                  timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                  type: txType,
+                  chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                  protocol: tx.protocol?.name || 'N/A',
+                  token: inInfo.token,
+                  value: inInfo.value,
+                  value_fiat: inInfo.valueFiat,
+                  fees: '0', // Fees only on OUT row
+                  hash: tx.hash || tx.transactionHash || 'N/A',
+                  from: tx.from || 'N/A',
+                  to: tx.to || 'N/A',
+                  block_number: blockNumber,
+                });
+              } else {
+                // Single asset transaction
+                recordCounter++;
+                const { token, value, valueFiat } = this.extractTokenInfo(tx, 'auto');
+                const direction = (tx.assetsIn && tx.assetsIn.length > 0) ? 'IN' : 
+                                 (tx.assetsOut && tx.assetsOut.length > 0) ? 'OUT' : 'N/A';
+                
+                records.push({
+                  field_no: recordCounter,
+                  trading_capacity: 'DEAL',
+                  transaction_status: 'NEWT',
+                  direction: direction,
+                  wallet,
+                  timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                  type: txType,
+                  chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                  protocol: tx.protocol?.name || 'N/A',
+                  token: token,
+                  value: value,
+                  value_fiat: valueFiat,
+                  fees: tx.fees || '0',
+                  hash: tx.hash || tx.transactionHash || 'N/A',
+                  from: tx.from || 'N/A',
+                  to: tx.to || 'N/A',
+                  block_number: blockNumber,
+                });
+              }
             }
           });
         }
@@ -457,6 +588,7 @@ class ReportGenerator {
           { id: 'field_no', title: 'Field no' },
           { id: 'trading_capacity', title: 'Trading capacity' },
           { id: 'transaction_status', title: 'Transaction_status' },
+          { id: 'direction', title: 'Direction' },
           { id: 'wallet', title: 'Wallet Address' },
           { id: 'timestamp', title: 'Timestamp' },
           { id: 'type', title: 'Transaction Type' },
@@ -485,29 +617,83 @@ class ReportGenerator {
               return; // Skip this transaction
             }
             
-            recordCounter++;
-            
-            // Extract token and value information
-            const { token, value, valueFiat } = this.extractTokenInfo(tx);
-            
-            records.push({
-              field_no: recordCounter,
-              trading_capacity: 'DEAL',
-              transaction_status: 'NEWT',
-              wallet,
-              timestamp: this.formatTimestamp(tx.timestamp || tx.date),
-              type: tx.type || 'unknown',
-              chain: tx.chain?.name || tx.chain?.key || 'unknown',
-              protocol: tx.protocol?.name || 'N/A',
-              token: token,
-              value: value,
-              value_fiat: valueFiat,
-              fees: tx.fees || '0',
-              hash: tx.hash || tx.transactionHash || 'N/A',
-              from: tx.from || 'N/A',
-              to: tx.to || 'N/A',
-              block_number: tx.blockNumber || tx.block_number || 'N/A',
-            });
+            // Check if transaction has both assetsIn and assetsOut (like swaps)
+            if (this.hasBothAssets(tx)) {
+              // Create two rows: one for OUT, one for IN
+              const blockNumber = tx.blockNumber || tx.block_number || 'N/A';
+              
+              // Row 1: Assets OUT (what was sent)
+              recordCounter++;
+              const outInfo = this.extractTokenInfo(tx, 'out');
+              records.push({
+                field_no: recordCounter,
+                trading_capacity: 'DEAL',
+                transaction_status: 'NEWT',
+                direction: 'OUT',
+                wallet,
+                timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                type: tx.type || 'unknown',
+                chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                protocol: tx.protocol?.name || 'N/A',
+                token: outInfo.token,
+                value: outInfo.value,
+                value_fiat: outInfo.valueFiat,
+                fees: tx.fees || '0',
+                hash: tx.hash || tx.transactionHash || 'N/A',
+                from: tx.from || 'N/A',
+                to: tx.to || 'N/A',
+                block_number: blockNumber,
+              });
+              
+              // Row 2: Assets IN (what was received)
+              recordCounter++;
+              const inInfo = this.extractTokenInfo(tx, 'in');
+              records.push({
+                field_no: recordCounter,
+                trading_capacity: 'DEAL',
+                transaction_status: 'NEWT',
+                direction: 'IN',
+                wallet,
+                timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                type: tx.type || 'unknown',
+                chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                protocol: tx.protocol?.name || 'N/A',
+                token: inInfo.token,
+                value: inInfo.value,
+                value_fiat: inInfo.valueFiat,
+                fees: '0', // Fees only on OUT row
+                hash: tx.hash || tx.transactionHash || 'N/A',
+                from: tx.from || 'N/A',
+                to: tx.to || 'N/A',
+                block_number: blockNumber,
+              });
+            } else {
+              // Single asset transaction
+              recordCounter++;
+              const { token, value, valueFiat } = this.extractTokenInfo(tx, 'auto');
+              const direction = (tx.assetsIn && tx.assetsIn.length > 0) ? 'IN' : 
+                               (tx.assetsOut && tx.assetsOut.length > 0) ? 'OUT' : 'N/A';
+              
+              records.push({
+                field_no: recordCounter,
+                trading_capacity: 'DEAL',
+                transaction_status: 'NEWT',
+                direction: direction,
+                wallet,
+                timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+                type: tx.type || 'unknown',
+                chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                protocol: tx.protocol?.name || 'N/A',
+                token: token,
+                value: value,
+                value_fiat: valueFiat,
+                fees: tx.fees || '0',
+                hash: tx.hash || tx.transactionHash || 'N/A',
+                from: tx.from || 'N/A',
+                to: tx.to || 'N/A',
+                block_number: tx.blockNumber || tx.block_number || 'N/A',
+              });
+            }
           });
         }
       });
