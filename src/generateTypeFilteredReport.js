@@ -261,18 +261,22 @@ Environment Variables:
   REPORT_OUTPUT_DIR    - Output directory for reports (default: ./reports)
 
 CSV Output Columns:
+  - Field no (sequential numbering: 1, 2, 3, ...)
+  - Trading capacity (constant: DEAL)
+  - Transaction_status (constant: NEWT)
   - Wallet Address
   - Timestamp
   - Transaction Type
   - Chain
+  - Protocol (DeFi protocol name)
   - Token
   - Value
+  - Value (Fiat) (transaction value in fiat currency)
+  - Fees (fees paid in native asset)
   - Transaction Hash
   - From Address
   - To Address
-  - Gas Used
-  - Gas Price
-  - Status
+  - Block Number
 `);
 }
 

@@ -14,6 +14,9 @@ const config = {
     outputDir: process.env.REPORT_OUTPUT_DIR || './reports',
     logLevel: process.env.LOG_LEVEL || 'info',
     hideSpam: process.env.HIDE_SPAM !== 'false', // Enable spam filtering by default
+    excludedTransactionTypes: process.env.EXCLUDED_TRANSACTION_TYPES
+      ? process.env.EXCLUDED_TRANSACTION_TYPES.split(',').map(type => type.trim().toUpperCase())
+      : ['CLAIM', 'BRIDGEIN', 'BRIDGEOUT', 'APPROVAL', 'INTERACTION', 'FAILED'], // Default excluded types
   },
   wallets: {
     addresses: process.env.WALLET_ADDRESSES 

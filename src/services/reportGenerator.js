@@ -26,21 +26,24 @@ class ReportGenerator {
   extractTokenInfo(tx) {
     let token = 'N/A';
     let value = '0';
+    let valueFiat = '0';
     
     // Check assetsIn first (what the wallet received)
     if (tx.assetsIn && tx.assetsIn.length > 0) {
       const asset = tx.assetsIn[0];
       token = asset.symbol || asset.name || 'N/A';
-      value = asset.balance || asset.value || '0';
+      value = asset.balance || '0';
+      valueFiat = asset.value || '0'; // The 'value' field in assets is the fiat value
     }
     // Check assetsOut (what the wallet sent)
     else if (tx.assetsOut && tx.assetsOut.length > 0) {
       const asset = tx.assetsOut[0];
       token = asset.symbol || asset.name || 'N/A';
-      value = asset.balance || asset.value || '0';
+      value = asset.balance || '0';
+      valueFiat = asset.value || '0'; // The 'value' field in assets is the fiat value
     }
     
-    return { token, value };
+    return { token, value, valueFiat };
   }
 
   /**
@@ -66,6 +69,7 @@ class ReportGenerator {
     const timestamp = moment().format('YYYY-MM-DD_HH-mm-ss');
     
     console.log(`🔍 Filtering transactions by status: ${statusFilter}`);
+    console.log(`🚫 Excluding transaction types: ${config.reporting.excludedTransactionTypes.join(', ')}`);
     
     const filename = `${reportName}_${timestamp}.csv`;
     const filepath = path.join(this.outputDir, filename);
@@ -74,22 +78,28 @@ class ReportGenerator {
       const csvWriter = createCsvWriter({
         path: filepath,
         header: [
+          { id: 'field_no', title: 'Field no' },
+          { id: 'trading_capacity', title: 'Trading capacity' },
+          { id: 'transaction_status', title: 'Transaction_status' },
           { id: 'wallet', title: 'Wallet Address' },
           { id: 'timestamp', title: 'Timestamp' },
           { id: 'type', title: 'Transaction Type' },
           { id: 'chain', title: 'Chain' },
+          { id: 'protocol', title: 'Protocol' },
           { id: 'token', title: 'Token' },
           { id: 'value', title: 'Value' },
+          { id: 'value_fiat', title: 'Value (Fiat)' },
+          { id: 'fees', title: 'Fees' },
           { id: 'hash', title: 'Transaction Hash' },
           { id: 'from', title: 'From Address' },
           { id: 'to', title: 'To Address' },
           { id: 'block_number', title: 'Block Number' },
-          { id: 'is_validated', title: 'Is Validated' },
         ],
       });
 
       const records = [];
       let totalFilteredTransactions = 0;
+      let recordCounter = 0;
       let statusCounts = {
         validated: 0,
         pending: 0,
@@ -100,6 +110,12 @@ class ReportGenerator {
       Object.entries(data.transactions || {}).forEach(([wallet, txs]) => {
         if (Array.isArray(txs)) {
           txs.forEach(tx => {
+            // Check if transaction type should be excluded
+            const txType = (tx.type || 'unknown').toUpperCase();
+            if (config.reporting.excludedTransactionTypes.includes(txType)) {
+              return; // Skip this transaction
+            }
+            
             // Determine validation status
             const status = tx.status || 'success';
             const confirmed = tx.confirmed || tx.confirmations > 0 || status === 'success';
@@ -139,22 +155,28 @@ class ReportGenerator {
             
             if (includeTransaction) {
               totalFilteredTransactions++;
+              recordCounter++;
               
               // Extract token and value information
-              const { token, value } = this.extractTokenInfo(tx);
+              const { token, value, valueFiat } = this.extractTokenInfo(tx);
               
               records.push({
+                field_no: recordCounter,
+                trading_capacity: 'DEAL',
+                transaction_status: 'NEWT',
                 wallet,
                 timestamp: this.formatTimestamp(tx.timestamp || tx.date),
                 type: tx.type || 'unknown',
                 chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                protocol: tx.protocol?.name || 'N/A',
                 token: token,
                 value: value,
+                value_fiat: valueFiat,
+                fees: tx.fees || '0',
                 hash: tx.hash || tx.transactionHash || 'N/A',
                 from: tx.from || 'N/A',
                 to: tx.to || 'N/A',
                 block_number: blockNumber,
-                is_validated: isValidated ? 'Yes' : 'No',
               });
             }
           });
@@ -198,6 +220,7 @@ class ReportGenerator {
     const typesToFilter = Array.isArray(transactionTypes) ? transactionTypes : [transactionTypes];
     
     console.log(`🔍 Filtering transactions by types: ${typesToFilter.join(', ')}`);
+    console.log(`🚫 Excluding transaction types: ${config.reporting.excludedTransactionTypes.join(', ')}`);
     
     const filename = `${reportName}_${timestamp}.csv`;
     const filepath = path.join(this.outputDir, filename);
@@ -206,30 +229,43 @@ class ReportGenerator {
       const csvWriter = createCsvWriter({
         path: filepath,
         header: [
+          { id: 'field_no', title: 'Field no' },
+          { id: 'trading_capacity', title: 'Trading capacity' },
+          { id: 'transaction_status', title: 'Transaction_status' },
           { id: 'wallet', title: 'Wallet Address' },
           { id: 'timestamp', title: 'Timestamp' },
           { id: 'type', title: 'Transaction Type' },
           { id: 'chain', title: 'Chain' },
+          { id: 'protocol', title: 'Protocol' },
           { id: 'token', title: 'Token' },
           { id: 'value', title: 'Value' },
+          { id: 'value_fiat', title: 'Value (Fiat)' },
+          { id: 'fees', title: 'Fees' },
           { id: 'hash', title: 'Transaction Hash' },
           { id: 'from', title: 'From Address' },
           { id: 'to', title: 'To Address' },
           { id: 'block_number', title: 'Block Number' },
-          { id: 'is_validated', title: 'Is Validated' },
         ],
       });
 
       const records = [];
       let totalFilteredTransactions = 0;
+      let recordCounter = 0;
       
       Object.entries(data.transactions || {}).forEach(([wallet, txs]) => {
         if (Array.isArray(txs)) {
           txs.forEach(tx => {
             // Filter by transaction type
             const txType = tx.type || 'unknown';
+            
+            // Check if transaction type should be excluded
+            if (config.reporting.excludedTransactionTypes.includes(txType.toUpperCase())) {
+              return; // Skip this transaction
+            }
+            
             if (typesToFilter.includes(txType)) {
               totalFilteredTransactions++;
+              recordCounter++;
               
               // Determine validation status
               const status = tx.status || 'success';
@@ -238,20 +274,25 @@ class ReportGenerator {
               const isValidated = confirmed && status === 'success';
               
               // Extract token and value information
-              const { token, value } = this.extractTokenInfo(tx);
+              const { token, value, valueFiat } = this.extractTokenInfo(tx);
               
               records.push({
+                field_no: recordCounter,
+                trading_capacity: 'DEAL',
+                transaction_status: 'NEWT',
                 wallet,
                 timestamp: this.formatTimestamp(tx.timestamp || tx.date),
                 type: txType,
                 chain: tx.chain?.name || tx.chain?.key || 'unknown',
+                protocol: tx.protocol?.name || 'N/A',
                 token: token,
                 value: value,
+                value_fiat: valueFiat,
+                fees: tx.fees || '0',
                 hash: tx.hash || tx.transactionHash || 'N/A',
                 from: tx.from || 'N/A',
                 to: tx.to || 'N/A',
                 block_number: blockNumber,
-                is_validated: isValidated ? 'Yes' : 'No',
               });
             }
           });
@@ -329,11 +370,17 @@ class ReportGenerator {
     Object.values(data.transactions || {}).forEach(walletTxs => {
       if (Array.isArray(walletTxs)) {
         walletTxs.forEach(tx => {
+          // Check if transaction type should be excluded
+          const txType = (tx.type || 'unknown').toUpperCase();
+          if (config.reporting.excludedTransactionTypes.includes(txType)) {
+            return; // Skip this transaction
+          }
+          
           summary.totalTransactions++;
           
           // Track transaction types
-          const txType = tx.type || 'unknown';
-          summary.transactionTypes[txType] = (summary.transactionTypes[txType] || 0) + 1;
+          const txTypeOriginal = tx.type || 'unknown';
+          summary.transactionTypes[txTypeOriginal] = (summary.transactionTypes[txTypeOriginal] || 0) + 1;
           
           // Track tokens
           if (tx.token) {
@@ -407,40 +454,59 @@ class ReportGenerator {
       const csvWriter = createCsvWriter({
         path: filepath,
         header: [
+          { id: 'field_no', title: 'Field no' },
+          { id: 'trading_capacity', title: 'Trading capacity' },
+          { id: 'transaction_status', title: 'Transaction_status' },
           { id: 'wallet', title: 'Wallet Address' },
           { id: 'timestamp', title: 'Timestamp' },
           { id: 'type', title: 'Transaction Type' },
           { id: 'chain', title: 'Chain' },
+          { id: 'protocol', title: 'Protocol' },
           { id: 'token', title: 'Token' },
           { id: 'value', title: 'Value' },
+          { id: 'value_fiat', title: 'Value (Fiat)' },
+          { id: 'fees', title: 'Fees' },
           { id: 'hash', title: 'Transaction Hash' },
           { id: 'from', title: 'From Address' },
           { id: 'to', title: 'To Address' },
           { id: 'block_number', title: 'Block Number' },
-          { id: 'is_validated', title: 'Is Validated' },
         ],
       });
 
       const records = [];
+      let recordCounter = 0;
       
       Object.entries(report.details.transactions || {}).forEach(([wallet, txs]) => {
         if (Array.isArray(txs)) {
           txs.forEach(tx => {
+            // Check if transaction type should be excluded
+            const txType = (tx.type || 'unknown').toUpperCase();
+            if (config.reporting.excludedTransactionTypes.includes(txType)) {
+              return; // Skip this transaction
+            }
+            
+            recordCounter++;
+            
             // Extract token and value information
-            const { token, value } = this.extractTokenInfo(tx);
+            const { token, value, valueFiat } = this.extractTokenInfo(tx);
             
             records.push({
+              field_no: recordCounter,
+              trading_capacity: 'DEAL',
+              transaction_status: 'NEWT',
               wallet,
               timestamp: this.formatTimestamp(tx.timestamp || tx.date),
               type: tx.type || 'unknown',
               chain: tx.chain?.name || tx.chain?.key || 'unknown',
+              protocol: tx.protocol?.name || 'N/A',
               token: token,
               value: value,
+              value_fiat: valueFiat,
+              fees: tx.fees || '0',
               hash: tx.hash || tx.transactionHash || 'N/A',
               from: tx.from || 'N/A',
               to: tx.to || 'N/A',
               block_number: tx.blockNumber || tx.block_number || 'N/A',
-              is_validated: (tx.status === 'success') ? 'Yes' : 'No',
             });
           });
         }

@@ -146,11 +146,16 @@ npm run report:status all monthly
 - `all` - All transactions regardless of status
 
 **Enhanced CSV Output includes:**
+- Field no - Sequential numbering (1, 2, 3, ...)
+- Trading capacity - Constant value: DEAL
+- Transaction_status - Constant value: NEWT
+- Protocol - DeFi protocol name (from Octav API)
+- Value (Fiat) - Transaction value in fiat currency (from Octav API)
+- Fees - Transaction fees in native asset (from Octav API)
 - Transaction Status
 - Confirmation Status
 - Block Number
 - Number of Confirmations
-- Validation Status
 
 ### Web API Endpoints
 
@@ -216,6 +221,7 @@ Reports are generated in multiple formats:
 | `REPORT_OUTPUT_DIR` | Output directory for reports | No | `./reports` |
 | `REPORT_SCHEDULE` | Cron schedule for reports | No | `0 9 * * *` |
 | `HIDE_SPAM` | Filter out spam transactions | No | `true` |
+| `EXCLUDED_TRANSACTION_TYPES` | Transaction types to exclude (comma-separated) | No | `CLAIM,BRIDGEIN,BRIDGEOUT,APPROVAL,INTERACTION,FAILED` |
 | `PORT` | Web server port | No | `3000` |
 | `SLACK_WEBHOOK_URL` | Slack webhook for notifications | No | - |
 | `EMAIL_SMTP_HOST` | SMTP host for email notifications | No | - |
@@ -282,7 +288,9 @@ The system includes comprehensive error handling:
 - Data processing errors
 - Graceful degradation
 
-## 🚫 Spam Filtering
+## 🚫 Filtering Options
+
+### Spam Filtering
 
 The system automatically filters out spam transactions by default:
 
@@ -291,6 +299,17 @@ The system automatically filters out spam transactions by default:
 - **Configurable**: Set `HIDE_SPAM=false` to include all transactions
 - **Clean reports**: Focus on legitimate transaction activity
 - **Reduced noise**: Eliminates dust attacks and spam transfers
+
+### Transaction Type Exclusion
+
+Certain transaction types are excluded from all reports by default:
+
+- **Default excluded types**: `CLAIM`, `BRIDGEIN`, `BRIDGEOUT`, `APPROVAL`, `INTERACTION`, `FAILED`
+- **Rationale**: These are administrative/gas transactions, generic interactions, or failed transactions with no value transfer
+- **Configurable**: Set `EXCLUDED_TRANSACTION_TYPES` in `.env` to customize
+- **Example**: `EXCLUDED_TRANSACTION_TYPES=CLAIM,BRIDGEIN,BRIDGEOUT,APPROVAL,MINT`
+- **Remove all exclusions**: Set `EXCLUDED_TRANSACTION_TYPES=` (empty)
+- **Case-insensitive**: Types are matched regardless of case
 
 ## 🔄 Development
 
