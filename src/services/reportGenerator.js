@@ -76,7 +76,7 @@ class ReportGenerator {
     if (!timestamp || timestamp === 'N/A') return 'N/A';
     const unixTime = parseInt(timestamp);
     if (isNaN(unixTime)) return 'N/A';
-    return moment.unix(unixTime).format('YYYY-MM-DD HH:mm:ss');
+    return moment.unix(unixTime).format('MM/DD/YYYY HH:mm:ss');
   }
 
   /**
@@ -921,6 +921,143 @@ class ReportGenerator {
       chains: Array.from(summary.chains),
       topAssets: this.sortByValue(summary.topAssets, 10),
     };
+  }
+
+  /**
+   * Generate on-chain transactions CSV report (Bridge In/Out, Claim transactions)
+   * @param {Object} data - Transaction and portfolio data
+   * @param {string} filename - Output filename
+   * @param {Object} options - Report options
+   * @returns {Promise<string>} Generated report file path
+   */
+  async generateOnChainCsvReport(data, filename, options = {}) {
+    const { transactions = {}, portfolios = {} } = data;
+    const records = [];
+    let recordCounter = 0;
+
+    // Define on-chain transaction types to include
+    const onChainTypes = ['BRIDGEIN', 'BRIDGEOUT', 'CLAIM'];
+
+    // Process transactions for each wallet
+    Object.entries(transactions).forEach(([wallet, txs]) => {
+      if (!Array.isArray(txs)) return;
+
+      txs.forEach(tx => {
+        // Only include on-chain transaction types
+        if (!onChainTypes.includes(tx.type?.toUpperCase())) {
+          return;
+        }
+
+        recordCounter++;
+        
+        // Extract smart contract address for fallback use (not included in CSV)
+        const smartContractAddress = tx.interactingAddresses?.[0] || 
+                                   tx.protocol?.address || 
+                                   tx.to || 
+                                   'N/A';
+
+        const txType = tx.type?.toUpperCase();
+        
+        // Handle multi-asset transactions (especially CLAIMs)
+        if ((txType === 'CLAIM' || txType === 'BRIDGEIN') && tx.assetsIn && tx.assetsIn.length > 0) {
+          // Create one row per asset for CLAIM and BRIDGEIN transactions
+          tx.assetsIn.forEach((asset, index) => {
+            recordCounter++;
+            
+            const currency = asset.symbol || asset.name || 'N/A';
+            const quantity = asset.balance || '0';
+            
+            // Extract addresses from the asset
+            const walletTo = asset.to || wallet;
+            const walletFrom = asset.from || smartContractAddress;
+            
+            records.push({
+              field_no: recordCounter,
+              transaction_hash: tx.hash || tx.transactionHash || 'N/A',
+              wallet_address: wallet,
+              timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+              quantity: quantity,
+              wallet_to: walletTo,
+              wallet_from: walletFrom,
+              currency: currency,
+              transaction_type: tx.type || 'unknown'
+            });
+          });
+        } else if (txType === 'BRIDGEOUT' && tx.assetsOut && tx.assetsOut.length > 0) {
+          // Create one row per asset for BRIDGEOUT transactions
+          tx.assetsOut.forEach((asset, index) => {
+            recordCounter++;
+            
+            const currency = asset.symbol || asset.name || 'N/A';
+            const quantity = asset.balance || '0';
+            
+            // Extract addresses from the asset
+            const walletFrom = asset.from || wallet;
+            const walletTo = asset.to || smartContractAddress;
+            
+            records.push({
+              field_no: recordCounter,
+              transaction_hash: tx.hash || tx.transactionHash || 'N/A',
+              wallet_address: wallet,
+              timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+              quantity: quantity,
+              wallet_to: walletTo,
+              wallet_from: walletFrom,
+              currency: currency,
+              transaction_type: tx.type || 'unknown'
+            });
+          });
+        } else {
+          // Fallback for any other transaction types (shouldn't happen with current filtering)
+          recordCounter++;
+          
+          let currency = 'N/A';
+          let quantity = '0';
+          
+          if (tx.assetsIn && tx.assetsIn.length > 0) {
+            currency = tx.assetsIn[0].symbol || tx.assetsIn[0].name || 'N/A';
+            quantity = tx.assetsIn[0].balance || '0';
+          } else if (tx.assetsOut && tx.assetsOut.length > 0) {
+            currency = tx.assetsOut[0].symbol || tx.assetsOut[0].name || 'N/A';
+            quantity = tx.assetsOut[0].balance || '0';
+          }
+          
+          records.push({
+            field_no: recordCounter,
+            transaction_hash: tx.hash || tx.transactionHash || 'N/A',
+            wallet_address: wallet,
+            timestamp: this.formatTimestamp(tx.timestamp || tx.date),
+            quantity: quantity,
+            wallet_to: tx.to || 'N/A',
+            wallet_from: tx.from || 'N/A',
+            currency: currency,
+            transaction_type: tx.type || 'unknown'
+          });
+        }
+      });
+    });
+
+    // Create CSV file
+    const csvWriter = createCsvWriter({
+      path: filename,
+      header: [
+        { id: 'field_no', title: 'Field no' },
+        { id: 'transaction_hash', title: 'Transaction hash' },
+        { id: 'wallet_address', title: 'Wallet address' },
+        { id: 'timestamp', title: 'Timestamp' },
+        { id: 'quantity', title: 'Quantity' },
+        { id: 'wallet_to', title: 'Wallet to' },
+        { id: 'wallet_from', title: 'Wallet from' },
+        { id: 'currency', title: 'Currency' },
+        { id: 'transaction_type', title: 'Transaction type' }
+      ]
+    });
+
+    await csvWriter.writeRecords(records);
+    console.log(`✅ On-chain CSV report generated: ${filename}`);
+    console.log(`📊 Total on-chain transactions: ${records.length}`);
+
+    return filename;
   }
 }
 
